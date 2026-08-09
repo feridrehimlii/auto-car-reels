@@ -20,14 +20,26 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
-# Playlist: url = MP3 keçidi, start = Mahnının ən aktiv/dinamik hissəsinin başladığı saniyə
+# 🎵 Playlistdəki Təhlükəsiz Və Uyğun Phonk Trekləri (Səs 30%, Dinamik Hissələr)
 PLAYLIST = [
     {
-        "url": "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3",
+        "name": "Clovis Reyes - Fluxxwave",
+        "url": "https://cdn.pixabay.com/download/audio/2023/09/24/audio_34190c1f51.mp3",
         "start": 15
     },
     {
+        "name": "NBSPLV - Lost Soul",
         "url": "https://cdn.pixabay.com/download/audio/2022/11/18/audio_83d379bd43.mp3",
+        "start": 18
+    },
+    {
+        "name": "Ariis - MANDA BALA",
+        "url": "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3",
+        "start": 12
+    },
+    {
+        "name": "xxanteria - BAIXO",
+        "url": "https://cdn.pixabay.com/download/audio/2023/06/12/audio_13a1a15750.mp3",
         "start": 20
     }
 ]
@@ -53,30 +65,22 @@ def generate_car_fact():
     return random.choice(FALLBACK_FACTS)
 
 def fetch_contextual_image(fact_text):
-    print("AI mövzuya uyğun şəkil axtarır...")
+    print("AI mövzuya tam uyğun şəkil axtarır...")
     try:
-        kw_prompt = f"Extract 2-3 specific English search keywords describing the exact main subject of this text for photo search. Output ONLY keywords separated by space (e.g. 'china traffic jam', 'bugatti chiron engine', 'classic rolls royce'):\n{fact_text[:200]}"
+        kw_prompt = f"Extract ONLY ONE main subject in English for a Wikipedia search based on this text (e.g. 'Traffic jam', 'Bugatti Chiron', 'Traffic light', 'Automobile engine'):\n{fact_text[:200]}"
         kw_res = client.models.generate_content(model="gemini-2.0-flash", contents=kw_prompt)
-        query = kw_res.text.strip().replace("\n", "").replace('"', '')
-        print(f"Axtarış sözləri: '{query}'")
+        topic = kw_res.text.strip().replace("\n", "").replace('"', '').replace("'", "")
+        print(f"Axtarılan mövzu: '{topic}'")
 
-        wiki_url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={query}&gsrnamespace=6&prop=imageinfo&iiprop=url&format=json&gsrlimit=5"
+        wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(topic)}"
         res = requests.get(wiki_url, headers=HEADERS, timeout=8).json()
-        pages = res.get("query", {}).get("pages", {})
         
-        image_urls = []
-        for p in pages.values():
-            info = p.get("imageinfo", [{}])[0]
-            url = info.get("url")
-            if url and any(url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png']):
-                image_urls.append(url)
-
-        if image_urls:
-            selected_url = random.choice(image_urls)
-            print(f"Mövzuya uyğun şəkil tapıldı: {selected_url}")
-            return selected_url
+        if "originalimage" in res and "source" in res["originalimage"]:
+            img_url = res["originalimage"]["source"]
+            print(f"Wikipedia-dan foto tapıldı: {img_url}")
+            return img_url
     except Exception as e:
-        print(f"Şəkil axtarışında xəta: {e}")
+        print(f"Şəkil axtarış xətası: {e}")
 
     return "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=1080"
 
@@ -89,12 +93,12 @@ def create_styled_frame(text, img_url, width=1080, height=1920):
         print("Şəkil yüklənmədi, tünd fon yaradılır:", e)
         img = Image.new('RGBA', (width, height), (15, 20, 30, 255))
 
-    overlay = Image.new('RGBA', (width, height), (0, 0, 0, 80))
+    overlay = Image.new('RGBA', (width, height), (0, 0, 0, 70))
     img = Image.alpha_composite(img, overlay)
 
     draw = ImageDraw.Draw(img)
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 42)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
     except Exception:
         font = ImageFont.load_default()
 
@@ -104,7 +108,7 @@ def create_styled_frame(text, img_url, width=1080, height=1920):
     current_line = []
     for word in words:
         current_line.append(word)
-        if len(" ".join(current_line)) > 24:
+        if len(" ".join(current_line)) > 26:
             lines.append(" ".join(current_line[:-1]))
             current_line = [word]
     if current_line:
@@ -115,23 +119,18 @@ def create_styled_frame(text, img_url, width=1080, height=1920):
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
 
-    # MAVİ FON (Aşağı hissə)
-    padding_x = 40
+    # BÜTÖV MAVİ FON (AŞAĞIDA SOLDAN SAĞA BÜTÖV)
     padding_y = 35
-    banner_w = min(text_w + (padding_x * 2), width - 80)
     banner_h = text_h + (padding_y * 2)
     
-    banner_y1 = height - banner_h - 250
-    banner_y2 = height - 250
-    banner_x1 = (width - banner_w) / 2
-    banner_x2 = banner_x1 + banner_w
+    banner_y2 = height - 120
+    banner_y1 = banner_y2 - banner_h
 
     banner_layer = Image.new('RGBA', (width, height), (0, 0, 0, 0))
     banner_draw = ImageDraw.Draw(banner_layer)
-    banner_draw.rounded_rectangle(
-        [banner_x1, banner_y1, banner_x2, banner_y2],
-        radius=25,
-        fill=(10, 60, 150, 230)
+    banner_draw.rectangle(
+        [0, banner_y1, width, banner_y2],
+        fill=(10, 50, 140, 230)
     )
     img = Image.alpha_composite(img, banner_layer)
 
@@ -150,9 +149,10 @@ def create_video(text):
     duration = voice_audio.duration + 1.5
 
     selected_track = random.choice(PLAYLIST)
+    print(f"Seçilən mahnı: {selected_track['name']}")
     final_audio = voice_audio
+
     try:
-        print(f"Playlist-dən mahnı yüklənir...")
         res = requests.get(selected_track["url"], headers=HEADERS, timeout=10)
         if res.status_code == 200 and len(res.content) > 10000:
             with open("bg_music.mp3", "wb") as f:
@@ -165,10 +165,10 @@ def create_video(text):
                 start_time = max(0, full_bg.duration - duration)
                 
             bg_audio = full_bg.subclip(start_time, start_time + duration)
-            bg_audio = bg_audio.volumex(0.30) # Səs 30%
+            bg_audio = bg_audio.volumex(0.30)  # SƏS 30%
             final_audio = CompositeAudioClip([voice_audio, bg_audio])
     except Exception as e:
-        print("Musiqi işlənməsində xəta, yalnız diktor səsi istifadə olunur:", e)
+        print("Musiqi xətası:", e)
 
     img_url = fetch_contextual_image(text)
     frame_array = create_styled_frame(text, img_url)
@@ -194,8 +194,7 @@ def upload_to_tmp_host(file_path):
         with open(file_path, 'rb') as f:
             res = requests.post('https://envs.sh', files={'file': f}, headers=HEADERS)
             return res.text.strip()
-    except Exception as e:
-        print("Yükləmə xətası:", e)
+    except Exception:
         return None
 
 def post_to_instagram(video_url, caption):
@@ -236,26 +235,16 @@ if __name__ == "__main__":
     print("3. Serverə yüklənir...")
     public_url = upload_to_tmp_host("reel.mp4")
 
-    # VİDEO LİNKİNİ LOQLARDA ƏN BÖYÜK ŞƏKİLDƏ ÇAP EDİRİK
-    if public_url:
-        print("\n" + "="*60)
-        print("🎬 HAZIRLANAN VİDEONU İZLƏMƏK ÜÇÜN LİNK:")
-        print(public_url)
-        print("="*60 + "\n")
-    else:
-        print("⚠️ Video serverə yüklənə bilmədi.")
-
     print("4. Instagram-da paylaşılır...")
     try:
         if public_url:
             post_to_instagram(public_url, caption)
     except Exception as e:
-        print("Instagram paylaşımı zamanı xəta oldu:", e)
+        print("Instagram xətası:", e)
 
-    # NƏTİCƏNİ ƏN SONDA YENİDƏN ÇAP EDİRİK (İnstagram paylaşılmasa belə görəsiniz)
     if public_url:
         print("\n" + "="*60)
-        print("📌 YAKUN VİDEO LİNKİ (Yenidən baxmaq üçün kopyalayın):")
+        print("📌 YAKUN VİDEO LİNKİ (Brauzerdə açıb baxın):")
         print(public_url)
         print("="*60 + "\n")
-
+        
