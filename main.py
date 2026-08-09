@@ -17,30 +17,25 @@ INSTAGRAM_ACCOUNT_ID = os.getenv("INSTAGRAM_ACCOUNT_ID")
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 }
 
-# 🎵 Playlistdəki Təhlükəsiz Və Uyğun Phonk Trekləri (Səs 30%, Dinamik Hissələr)
+# 🎵 Playlista Uyğun Açıq Phonk / Drift MP3 Keçidləri
 PLAYLIST = [
     {
-        "name": "Clovis Reyes - Fluxxwave",
+        "name": "Phonk Track 1",
         "url": "https://cdn.pixabay.com/download/audio/2023/09/24/audio_34190c1f51.mp3",
-        "start": 15
-    },
-    {
-        "name": "NBSPLV - Lost Soul",
-        "url": "https://cdn.pixabay.com/download/audio/2022/11/18/audio_83d379bd43.mp3",
-        "start": 18
-    },
-    {
-        "name": "Ariis - MANDA BALA",
-        "url": "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3",
         "start": 12
     },
     {
-        "name": "xxanteria - BAIXO",
-        "url": "https://cdn.pixabay.com/download/audio/2023/06/12/audio_13a1a15750.mp3",
-        "start": 20
+        "name": "Phonk Track 2",
+        "url": "https://cdn.pixabay.com/download/audio/2022/11/18/audio_83d379bd43.mp3",
+        "start": 15
+    },
+    {
+        "name": "Phonk Track 3",
+        "url": "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3",
+        "start": 10
     }
 ]
 
@@ -64,25 +59,39 @@ def generate_car_fact():
             continue
     return random.choice(FALLBACK_FACTS)
 
+# 2. DƏQİQ MÖVZU ŞƏKLİ AXTARIŞI (Wikipedia Search Engine)
 def fetch_contextual_image(fact_text):
-    print("AI mövzuya tam uyğun şəkil axtarır...")
+    print("AI mövzuya uyğun şəkil axtarır...")
     try:
-        kw_prompt = f"Extract ONLY ONE main subject in English for a Wikipedia search based on this text (e.g. 'Traffic jam', 'Bugatti Chiron', 'Traffic light', 'Automobile engine'):\n{fact_text[:200]}"
+        kw_prompt = (
+            "Read this Azerbaijani car fact text and output ONLY 1-3 English search keywords "
+            "describing the main car or topic (e.g. 'Bugatti Chiron', 'Traffic jam', 'Car engine'). "
+            f"Do NOT write anything else:\n\n{fact_text[:250]}"
+        )
         kw_res = client.models.generate_content(model="gemini-2.0-flash", contents=kw_prompt)
-        topic = kw_res.text.strip().replace("\n", "").replace('"', '').replace("'", "")
-        print(f"Axtarılan mövzu: '{topic}'")
+        query = kw_res.text.strip().replace("\n", "").replace('"', '').replace("'", "")
+        print(f"Axtarılan mövzu: '{query}'")
 
-        wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(topic)}"
-        res = requests.get(wiki_url, headers=HEADERS, timeout=8).json()
-        
-        if "originalimage" in res and "source" in res["originalimage"]:
-            img_url = res["originalimage"]["source"]
-            print(f"Wikipedia-dan foto tapıldı: {img_url}")
-            return img_url
+        # Wikipedia Axtarış API
+        search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(query)}&format=json"
+        s_res = requests.get(search_url, headers=HEADERS, timeout=8).json()
+        search_results = s_res.get("query", {}).get("search", [])
+
+        if search_results:
+            page_title = search_results[0]["title"]
+            print(f"Tapılan məqalə: '{page_title}'")
+            
+            page_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(page_title)}"
+            p_res = requests.get(page_url, headers=HEADERS, timeout=8).json()
+            
+            if "originalimage" in p_res and "source" in p_res["originalimage"]:
+                img_url = p_res["originalimage"]["source"]
+                print(f"Mövzuya dəqiq uyğun şəkil tapıldı: {img_url}")
+                return img_url
     except Exception as e:
         print(f"Şəkil axtarış xətası: {e}")
 
-    return "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=1080"
+    return "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?q=80&w=1080"
 
 def create_styled_frame(text, img_url, width=1080, height=1920):
     try:
@@ -119,7 +128,7 @@ def create_styled_frame(text, img_url, width=1080, height=1920):
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
 
-    # BÜTÖV MAVİ FON (AŞAĞIDA SOLDAN SAĞA BÜTÖV)
+    # BÜTÖV MAVİ BANNER (AŞAĞIDA SOLDAN SAĞA BÜTÖV)
     padding_y = 35
     banner_h = text_h + (padding_y * 2)
     
@@ -148,13 +157,15 @@ def create_video(text):
     voice_audio = AudioFileClip("voice.mp3")
     duration = voice_audio.duration + 1.5
 
+    # Musiqi Yüklənməsi
     selected_track = random.choice(PLAYLIST)
     print(f"Seçilən mahnı: {selected_track['name']}")
     final_audio = voice_audio
 
     try:
-        res = requests.get(selected_track["url"], headers=HEADERS, timeout=10)
-        if res.status_code == 200 and len(res.content) > 10000:
+        print(f"Musiqi yüklənir: {selected_track['url']}")
+        res = requests.get(selected_track["url"], headers=HEADERS, allow_redirects=True, timeout=12)
+        if res.status_code == 200 and len(res.content) > 30000:
             with open("bg_music.mp3", "wb") as f:
                 f.write(res.content)
             
@@ -165,10 +176,13 @@ def create_video(text):
                 start_time = max(0, full_bg.duration - duration)
                 
             bg_audio = full_bg.subclip(start_time, start_time + duration)
-            bg_audio = bg_audio.volumex(0.30)  # SƏS 30%
+            bg_audio = bg_audio.volumex(0.30)  # Səsi 30% etmək
             final_audio = CompositeAudioClip([voice_audio, bg_audio])
+            print("Musiqi uğurla videoya miksləndi!")
+        else:
+            print(f"⚠️ Musiqi yüklənə bilmədi (Status: {res.status_code}, Ölçü: {len(res.content)})")
     except Exception as e:
-        print("Musiqi xətası:", e)
+        print("⚠️ Musiqi emalında xəta oldu:", e)
 
     img_url = fetch_contextual_image(text)
     frame_array = create_styled_frame(text, img_url)
@@ -247,4 +261,4 @@ if __name__ == "__main__":
         print("📌 YAKUN VİDEO LİNKİ (Brauzerdə açıb baxın):")
         print(public_url)
         print("="*60 + "\n")
-        
+
