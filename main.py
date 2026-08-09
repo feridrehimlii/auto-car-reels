@@ -4,18 +4,29 @@ import random
 import asyncio
 import requests
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 from google import genai
 import edge_tts
-from moviepy.editor import ColorClip, CompositeVideoClip, AudioFileClip, ImageClip
+from moviepy.editor import CompositeVideoClip, AudioFileClip, ImageClip, CompositeAudioClip
 
 # 1. Environment dəyişənləri
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN")
 INSTAGRAM_ACCOUNT_ID = os.getenv("INSTAGRAM_ACCOUNT_ID")
 
-# 2. Google GenAI
 client = genai.Client(api_key=GEMINI_API_KEY)
+
+# Yüksək keyfiyyətli avtomobil şəkillərinin siyahısı (Avtomatik seçiləcək)
+CAR_IMAGES = [
+    "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?q=80&w=1080&auto=format&fit=crop", # Porsche
+    "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=1080&auto=format&fit=crop", # Supercar
+    "https://images.unsplash.com/photo-1544829099-b9a0c07fad1a?q=80&w=1080&auto=format&fit=crop", # BMW
+    "https://images.unsplash.com/photo-1618843479313-40f8afb4b4d8?q=80&w=1080&auto=format&fit=crop", # Mercedes
+    "https://images.unsplash.com/photo-1603584173870-7f23fdae1b7a?q=80&w=1080&auto=format&fit=crop"  # Audi
+]
+
+# Trend Arxa Fon Musiqisi (Copyright-free Phonk/Car Beat)
+BG_MUSIC_URL = "https://cdn.pixabay.com/download/audio/2022/11/18/audio_83d379bd43.mp3"
 
 FALLBACK_FACTS = [
     "Bugatti Chiron mühərriki tam gücü ilə işləyərkən 100 litrlik yanacaq çənini cəmi 9 dəqiqəyə boşaldır! 🏎️ #bugatti #hypercar #supercar #azərbaycan",
@@ -39,86 +50,136 @@ def generate_car_fact():
             continue
     return random.choice(FALLBACK_FACTS)
 
-# 3. Video Yaratma
-def create_text_image(text, width=1080, height=1920):
-    img = Image.new('RGBA', (width, height), (15, 15, 20, 255))
+# 2. Şəkil Yükləmə və Üzərinə Mətn Əlavə Etmə
+def create_styled_frame(text, width=1080, height=1920):
+    img_url = random.choice(CAR_IMAGES)
+    try:
+        res = requests.get(img_url, timeout=10)
+        img = Image.open(requests.get(img_url, stream=True).raw).convert('RGBA')
+        img = img.resize((width, height))
+    except Exception:
+        img = Image.new('RGBA', (width, height), (20, 20, 30, 255))
+
+    # Tünd şəffaf overlay (Mətn aydın oxunsun deyə)
+    overlay = Image.new('RGBA', (width, height), (0, 0, 0, 160))
+    img = Image.alpha_composite(img, overlay)
+
     draw = ImageDraw.Draw(img)
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 46)
-    except:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
+    except Exception:
         font = ImageFont.load_default()
-    
+
     tts_text = text.split("#")[0].strip()
     words = tts_text.split()
     lines = []
     current_line = []
     for word in words:
         current_line.append(word)
-        if len(" ".join(current_line)) > 22:
+        if len(" ".join(current_line)) > 20:
             lines.append(" ".join(current_line[:-1]))
             current_line = [word]
-    if current_line: lines.append(" ".join(current_line))
+    if current_line:
+        lines.append(" ".join(current_line))
     display_text = "\n".join(lines)
-    
+
     bbox = draw.multiline_textbbox((0, 0), display_text, font=font, align="center")
-    draw.multiline_text(((width - (bbox[2]-bbox[0]))/2, (height - (bbox[3]-bbox[1]))/2), display_text, fill=(255, 255, 255, 255), font=font, align="center")
-    return np.array(img)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    
+    x = (width - text_w) / 2
+    y = (height - text_h) / 2
 
+    # Mətnə qara kölgə effekti
+    draw.multiline_text((x+3, y+3), display_text, fill=(0, 0, 0, 255), font=font, align="center")
+    draw.multiline_text((x, y), display_text, fill=(255, 255, 255, 255), font=font, align="center")
+
+    return np.array(img.convert('RGB'))
+
+# 3. Video və İkiqat Səsi Birləşdirmək (Voice + Music)
 def create_video(text):
+    print("Mətn səsə çevrilir...")
     asyncio.run(edge_tts.Communicate(text.split("#")[0].strip(), voice="az-AZ-BabekNeural").save("voice.mp3"))
-    audio = AudioFileClip("voice.mp3")
-    txt_clip = ImageClip(create_text_image(text)).set_duration(audio.duration + 1)
-    video = CompositeVideoClip([txt_clip]).set_audio(audio)
-    video.write_videofile("reel.mp4", fps=24, codec="libx264", audio_codec="aac")
-    audio.close(); video.close()
+    voice_audio = AudioFileClip("voice.mp3")
+    duration = voice_audio.duration + 1.5
 
-# 4. Yükləmə (İkiqat server)
+    # Arxa fon musiqisini yükləyirik
+    print("Trend musiqi yüklənir...")
+    music_data = requests.get(BG_MUSIC_URL).content
+    with open("bg_music.mp3", "wb") as f:
+        f.write(music_data)
+        
+    bg_audio = AudioFileClip("bg_music.mp3").subclip(0, duration)
+    bg_audio = bg_audio.volumex(0.18) # Musiqinin səsini 18%-ə salırıq ki, danışıq aydın olsun
+
+    # Səsləri miks edirik
+    final_audio = CompositeAudioClip([voice_audio, bg_audio])
+
+    # Vizual kadrı hazırlayırıq
+    frame_array = create_styled_frame(text)
+    txt_clip = ImageClip(frame_array).set_duration(duration)
+
+    video = CompositeVideoClip([txt_clip]).set_audio(final_audio)
+    video.write_videofile("reel.mp4", fps=24, codec="libx264", audio_codec="aac")
+
+    voice_audio.close()
+    bg_audio.close()
+    video.close()
+
+# 4. Serverə Yükləmə
 def upload_to_tmp_host(file_path):
-    with open(file_path, 'rb') as f:
-        try:
+    print("Video serverə yüklənir...")
+    try:
+        with open(file_path, 'rb') as f:
             res = requests.post('https://tmpfiles.org/api/v1/upload', files={'file': f})
-            if res.status_code == 200: return res.json()['data']['url'].replace("tmpfiles.org/", "tmpfiles.org/dl/")
-        except: pass
+            if res.status_code == 200:
+                return res.json()['data']['url'].replace("tmpfiles.org/", "tmpfiles.org/dl/")
+    except Exception as e:
+        print("tmpfiles xətası:", e)
+
     with open(file_path, 'rb') as f:
         res = requests.post('https://envs.sh', files={'file': f})
         return res.text.strip()
 
-# 5. Instagram Paylaşım (Daha detallı loqlar ilə)
+# 5. Instagram-da Paylaşmaq
 def post_to_instagram(video_url, caption):
-    print(f"DEBUG: Yüklənən video URL: {video_url}")
-    
-    # 1. Konteyner yarat
+    print(f"Instagram-a göndərilir: {video_url}")
     url = f"https://graph.facebook.com/v19.0/{INSTAGRAM_ACCOUNT_ID}/media"
     payload = {"media_type": "REELS", "video_url": video_url, "caption": caption, "access_token": META_ACCESS_TOKEN}
     res = requests.post(url, data=payload).json()
     
     if "id" not in res:
-        print("!!! XƏTA: Konteyner yaradılmadı. Cavab:", res)
+        print("!!! XƏTA: Konteyner yaradılmadı:", res)
         return
-    
-    creation_id = res["id"]
-    print(f"DEBUG: Konteyner yaradıldı. ID: {creation_id}")
 
-    # 2. Statusu yoxla
+    creation_id = res["id"]
+    print(f"Container ID: {creation_id}. Emal olunur...")
+
     status_url = f"https://graph.facebook.com/v19.0/{creation_id}?fields=status_code,status_info&access_token={META_ACCESS_TOKEN}"
     for i in range(20):
-        time.sleep(15)
+        time.sleep(12)
         status_res = requests.get(status_url).json()
-        print(f"DEBUG: Status yoxlaması {i+1}: {status_res}")
-        
+        print(f"Status yoxlaması {i+1}: {status_res}")
         if status_res.get("status_code") == "FINISHED": break
         if status_res.get("status_code") == "ERROR":
-            print("!!! XƏTA: Facebook videonu rədd etdi!", status_res.get("status_info"))
+            print("!!! XƏTA: Video rədd edildi!", status_res.get("status_info"))
             return
 
-    # 3. Paylaş
     pub_url = f"https://graph.facebook.com/v19.0/{INSTAGRAM_ACCOUNT_ID}/media_publish"
     pub_res = requests.post(pub_url, data={"creation_id": creation_id, "access_token": META_ACCESS_TOKEN}).json()
     print("!!! YAKUN CAVAB (PAYLAŞIM):", pub_res)
 
 if __name__ == "__main__":
+    print("1. Fakt seçilir...")
     caption = generate_car_fact()
+    print(f"Mətn:\n{caption}\n")
+
+    print("2. Şəkilli və Musiqili Video yaradılır...")
     create_video(caption)
-    url = upload_to_tmp_host("reel.mp4")
-    post_to_instagram(url, caption)
+
+    print("3. Yüklənir...")
+    public_url = upload_to_tmp_host("reel.mp4")
+
+    print("4. Paylaşılır...")
+    post_to_instagram(public_url, caption)
 
