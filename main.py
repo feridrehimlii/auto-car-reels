@@ -22,6 +22,17 @@ def generate_car_fact():
         "Mətn maksimum 2-3 cümlə olsun, Reels videosu üçün səsli oxunacaq. "
         "Sonda da 3-4 cəlbedici həştəq əlavə et."
     )
+    for attempt in range(3):
+        try:
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            print(f"Limit xətası oldu, 20 saniyə gözlənilir... (Cəhd {attempt + 1})")
+            time.sleep(20)
+    raise Exception("API cavab vermədi.")
+
+
+    )
     response = model.generate_content(prompt)
     return response.text
 
