@@ -23,7 +23,7 @@ def generate_car_fact():
     for attempt in range(4):
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-2.0-flash",
                 contents=prompt,
             )
             return response.text
