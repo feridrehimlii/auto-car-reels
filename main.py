@@ -28,17 +28,18 @@ def generate_car_fact():
             )
             return response.text
         except Exception as e:
-            print(f"Limit xətası oldu, 35 saniyə gözlənilir... (Cəhd {attempt + 1}) - {e}")
-            time.sleep(35)
+            print(f"Limit xətası oldu, 65 saniyə gözlənilir... (Cəhd {attempt + 1}) - {e}")
+            time.sleep(65)
     raise Exception("API cavab vermədi.")
 
 # 3. Mətni səsə çevirmək (edge-tts)
 async def create_audio(text, output_file="voice.mp3"):
+    # Həştəqləri səsli oxumamaq üçün ayırırıq
     tts_text = text.split("#")[0].strip()
     communicate = edge_tts.Communicate(tts_text, voice="az-AZ-BabekNeural")
     await communicate.save(output_file)
 
-# 4. Videonu keçici ictimai URL-ə yükləmək
+# 4. Videonu keçici ictimai URL-ə yükləmək (Instagram API üçün lazımdır)
 def upload_to_tmp_host(file_path):
     with open(file_path, 'rb') as f:
         response = requests.post('https://catbox.moe/user/api.php', data={'reqtype': 'fileupload'}, files={'fileToUpload': f})
@@ -53,10 +54,12 @@ def create_video(text):
     audio_clip = AudioFileClip("voice.mp3")
     duration = audio_clip.duration + 1
 
+    # 1080x1920 (Reels formatında) arxa fon
     bg_clip = ColorClip(size=(1080, 1920), color=(15, 15, 20), duration=duration)
     
     tts_text = text.split("#")[0].strip()
 
+    # Mətni ekrana uyğun sətirlərə bölürük
     words = tts_text.split()
     lines = []
     current_line = []
@@ -103,6 +106,7 @@ def post_to_instagram(video_url, caption):
     creation_id = res["id"]
     print(f"Container yaradıldı ID: {creation_id}. Video emal olunur...")
 
+    # Videonun emal olunmasını gözləyirik
     status_url = f"https://graph.facebook.com/v19.0/{creation_id}?fields=status_code&access_token={META_ACCESS_TOKEN}"
     for _ in range(20):
         time.sleep(10)
@@ -115,6 +119,7 @@ def post_to_instagram(video_url, caption):
             print("Video emal edilərkən xəta yarandı.")
             return
 
+    # Paylaşımı təsdiqləyirik
     publish_url = f"https://graph.facebook.com/v19.0/{INSTAGRAM_ACCOUNT_ID}/media_publish"
     pub_res = requests.post(publish_url, data={"creation_id": creation_id, "access_token": META_ACCESS_TOKEN}).json()
     print("Paylaşım nəticəsi:", pub_res)
@@ -133,4 +138,4 @@ if __name__ == "__main__":
 
     print("4. Instagram-a göndərilir...")
     post_to_instagram(public_url, caption)
-    
+
