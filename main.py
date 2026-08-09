@@ -1,5 +1,6 @@
 import os
 import time
+import random
 import asyncio
 import requests
 from google import genai
@@ -14,6 +15,14 @@ INSTAGRAM_ACCOUNT_ID = os.getenv("INSTAGRAM_ACCOUNT_ID")
 # 2. Yeni Google GenAI SDK tənzimləməsi
 client = genai.Client(api_key=GEMINI_API_KEY)
 
+# API limitdə olduqda istifadə olunacaq hazır ehtiyat faktlar
+FALLBACK_FACTS = [
+    "Bugatti Chiron mühərriki tam gücü ilə işləyərkən 100 litrlik yanacaq çənini cəmi 9 dəqiqəyə boşaldır! 🏎️ #bugatti #hypercar #supercar #azərbaycan",
+    "Dünyada ilk yol hərəkəti işıqları 1868-ci ildə Londonda quraşdırılıb və qazla işləyirdi. 🚦 #avto #tarix #maraqli #baku",
+    "Rolls-Royce avtomobillərinin salondakı saatı o qədər sakit işləyir ki, 100 km/saat sürətlə gedərkən eşidilən tək səs həmin saatın çıqqıltısı olur. 🚘 #rollsroyce #luxury #avtomobil #azerbaijan",
+    "Dünyanın ən uzun tıxacı 2010-cu ildə Çində baş verib və tam 12 gün davam edib! Sürücülər gündə cəmi 1 km hərəkət edə bilirdilər. 🚗 #carfacts #maraqlifactlar #autolife #azərbaycan"
+]
+
 def generate_car_fact():
     prompt = (
         "Avtomobillər haqqında maraqlı, qısa və cəlb edici bir fakt yaz (Azərbaycan dilində). "
@@ -21,8 +30,7 @@ def generate_car_fact():
         "Sonda da 3-4 cəlbedici həştəq əlavə et."
     )
     
-    # Biri limitdə olarsa, avtomatik digərinə keçəcək modellər siyahısı
-    candidate_models = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash-8b"]
+    candidate_models = ["gemini-2.0-flash", "gemini-1.5-flash"]
     
     for model_name in candidate_models:
         try:
@@ -34,10 +42,11 @@ def generate_car_fact():
             print(f"Uğurlu model: {model_name}")
             return response.text
         except Exception as e:
-            print(f"{model_name} xəta verdi (Limit və ya digər): {e}")
-            time.sleep(3)
+            print(f"{model_name} xəta verdi: {e}")
+            time.sleep(2)
             
-    raise Exception("Bütün modellər limitdədir, bir az sonra yenidən cəhd edin.")
+    print("⚠️ Bütün AI modelləri limitdədir. Ehtiyat faktlardan biri istifadə olunur...")
+    return random.choice(FALLBACK_FACTS)
 
 # 3. Mətni səsə çevirmək (edge-tts)
 async def create_audio(text, output_file="voice.mp3"):
@@ -127,7 +136,7 @@ def post_to_instagram(video_url, caption):
     print("Paylaşım nəticəsi:", pub_res)
 
 if __name__ == "__main__":
-    print("1. Gemini AI ilə avto-fakt hazırlanır...")
+    print("1. Fakt hazırlanır...")
     caption = generate_car_fact()
     print(f"Mətn:\n{caption}\n")
 
