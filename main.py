@@ -1,267 +1,174 @@
 import os
-import time
+import re
 import random
-import asyncio
 import requests
+from urllib.parse import quote
+from gtts import gTTS
+from PIL import Image
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps
-from google import genai
-import edge_tts
-from moviepy.editor import CompositeVideoClip, AudioFileClip, ImageClip, CompositeAudioClip
+from moviepy.editor import (
+    ImageClip, AudioFileClip, CompositeAudioClip, 
+    CompositeVideoClip, TextClip, afx
+)
 
-# 1. Environment Dəyişənləri
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN")
-INSTAGRAM_ACCOUNT_ID = os.getenv("INSTAGRAM_ACCOUNT_ID")
-
-client = genai.Client(api_key=GEMINI_API_KEY)
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+# ==========================================
+# 1. INSTAGRAM VIRAL MAHNILAR SİYAHISI (Direct MP3)
+# ==========================================
+VIRAL_INSTAGRAM_MUSIC = {
+    "1. Instagram Phonk Trend": "https://cdn.pixabay.com/download/audio/2023/11/19/audio_d1beec11ef.mp3",
+    "2. Aesthetic Lo-Fi Viral": "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3",
+    "3. Cinematic Reel Trend": "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73213.mp3",
+    "4. Upbeat Energetic Trend": "https://cdn.pixabay.com/download/audio/2022/10/14/audio_9939f131cf.mp3"
 }
 
-# 🎵 ZƏMANƏTLİ VƏ BİRBAŞA YÜKLƏNƏN PHONK MUSİQİLƏRİ
-PLAYLIST = [
-    {
-        "name": "Aggressive Drift Phonk",
-        "url": "https://ia801503.us.archive.org/15/items/phonk-background-music/phonk1.mp3",
-        "start": 10
-    },
-    {
-        "name": "Cyber Phonk Beat",
-        "url": "https://ia801503.us.archive.org/15/items/phonk-background-music/phonk2.mp3",
-        "start": 15
-    },
-    {
-        "name": "Rio Drift Funk",
-        "url": "https://ia801503.us.archive.org/15/items/phonk-background-music/phonk3.mp3",
-        "start": 12
+# ==========================================
+# 2. PINTEREST-DƏN İNGİLİS DİLİNDƏ ŞƏKİL TAPMAQ
+# ==========================================
+def fetch_pinterest_image_en(english_query):
+    """
+    Pinterest-də ingilis dili sorğusu ilə axtarış edir və HD şəkil linkini qaytarır.
+    """
+    print(f"🔍 Pinterest-də ingilis dilində axtarılır: '{english_query}'...")
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
     }
-]
-
-FALLBACK_FACTS = [
-    "Dünyanın ən uzun tıxacı 2010-cu ildə Çində baş verib və tam 12 gün davam edib! Peqin-Tibet magistralında yaranan bu nəhəng tıxacın uzunluğu 100 kilometrdən çox idi. Sürücülər gün ərzində cəmi 1 kilometr hərəkət edə bilirdilər. Yolda qalan insanlara ərzaq və su satmaq üçün yerli sakinlər xüsusi ticarət şəbəkəsi qurmuşdular. 🚗 #carfacts #maraqlifactlar #autolife #azərbaycan",
-    "Bugatti Chiron mühərriki tam gücü ilə işləyərkən 100 litrlik yanacaq çənini cəmi 9 dəqiqəyə tamamilə boşaldır! Bu möhtəşəm 8.0 litrlik W16 mühərriki dəqiqədə 60 min litrdən çox hava sorur. Yanacaq nasosu isə dəqiqədə 15 litr benzin vurur. Bu inanılmaz göstəricilər hiperkarın niyə dünyanın ən sürətli avtomobillərindən biri olduğunu bir daha sübut edir. 🏎️ #bugatti #hypercar #supercar #azərbaycan"
-]
-
-def generate_car_fact():
-    prompt = (
-        "Avtomobillər haqqında çox maraqlı, detallı və diqqətçəkən bir fakt yaz (Azərbaycan dilində). "
-        "Mətn kifayət qədər zəngin və uzun olsun ki, səsli oxunuşu təxminən 15-20 saniyə çəksin (təxminən 45-60 söz). "
-        "Sonda da 3-4 cəlbedici həştəq əlavə et."
-    )
-    candidate_models = ["gemini-2.0-flash", "gemini-2.0-flash-lite"]
-    for model_name in candidate_models:
-        try:
-            response = client.models.generate_content(model=model_name, contents=prompt)
-            return response.text
-        except Exception:
-            continue
-    return random.choice(FALLBACK_FACTS)
-
-# 2. ŞƏKİL AXTARIŞI (Wikipedia Deep Search & Fallback)
-def fetch_contextual_image(fact_text):
-    print("AI mövzuya uyğun şəkil axtarır...")
-    try:
-        kw_prompt = (
-            "Extract ONLY 1-3 English search keywords describing the main vehicle or subject "
-            "(e.g. 'Bugatti Chiron', 'Traffic jam', 'Engine'). Do not write full sentences:\n"
-            f"{fact_text[:250]}"
-        )
-        kw_res = client.models.generate_content(model="gemini-2.0-flash", contents=kw_prompt)
-        query = kw_res.text.strip().replace('"', '').replace("'", "").replace(".", "")
-        print(f"Axtarılan mövzu: '{query}'")
-
-        wiki_search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(query)}&format=json"
-        s_res = requests.get(wiki_search_url, headers=HEADERS, timeout=8).json()
-        search_results = s_res.get("query", {}).get("search", [])
-
-        for item in search_results[:3]:
-            page_title = item["title"]
-            summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(page_title)}"
-            p_res = requests.get(summary_url, headers=HEADERS, timeout=8).json()
-            
-            if "originalimage" in p_res and "source" in p_res["originalimage"]:
-                img_url = p_res["originalimage"]["source"]
-                print(f"Wikipedia-dan foto tapıldı: {img_url}")
-                return img_url
-    except Exception as e:
-        print(f"Şəkil axtarış xətası: {e}")
-
-    # Fallback Yüksək Keyfiyyətli Avtomobil Şəkilləri
-    fallbacks = [
-        "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?q=80&w=1080",
-        "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=1080",
-        "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?q=80&w=1080"
-    ]
-    return random.choice(fallbacks)
-
-# 3. YENİ DİZAYN: YUXARI ŞƏKİL, AŞAĞI YAZI
-def create_split_frame(text, img_url, width=1080, height=1920):
-    # Fon: Tünd göy/boz
-    canvas = Image.new('RGB', (width, height), (15, 23, 42))
-
-    # Yuxarı Hissə (1080x1080 Kvadrat Şəkil Sahəsi)
-    img_h = 1080
-    try:
-        res = requests.get(img_url, headers=HEADERS, stream=True, timeout=10)
-        if res.status_code == 200:
-            top_img = Image.open(res.raw).convert('RGB')
-            top_img = ImageOps.fit(top_img, (width, img_h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
-            canvas.paste(top_img, (0, 0))
-    except Exception as e:
-        print("Şəkil yüklənmədi, tünd fon saxlanılır:", e)
-
-    draw = ImageDraw.Draw(canvas)
     
-    # İki hissə arasında göy bəzək xətti
-    draw.line([(0, img_h), (width, img_h)], fill=(59, 130, 246), width=8)
-
+    encoded_query = quote(english_query)
+    url = f"https://www.pinterest.com/search/pins/?q={encoded_query}&rs=typed"
+    
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 38)
-    except Exception:
-        font = ImageFont.load_default()
-
-    tts_text = text.split("#")[0].strip()
-    words = tts_text.split()
-    lines = []
-    current_line = []
-    for word in words:
-        current_line.append(word)
-        if len(" ".join(current_line)) > 28:
-            lines.append(" ".join(current_line[:-1]))
-            current_line = [word]
-    if current_line:
-        lines.append(" ".join(current_line))
-    display_text = "\n".join(lines)
-
-    # Aşağı sahədə mərkəzləşdirmə (Aşağı sahənin hündürlüyü: 840px)
-    bbox = draw.multiline_textbbox((0, 0), display_text, font=font, align="center")
-    text_w = bbox[2] - bbox[0]
-    text_h = bbox[3] - bbox[1]
-
-    bottom_area_h = height - img_h
-    text_x = (width - text_w) / 2
-    text_y = img_h + (bottom_area_h - text_h) / 2
-
-    # Yazını tam aşağı hissəyə çəkmək
-    draw.multiline_text((text_x, text_y), display_text, fill=(255, 255, 255), font=font, align="center", spacing=15)
-
-    return np.array(canvas)
-
-# 4. MUSİQİ YÜKLƏMƏ FUNKSİYASI (Mütləq tapır)
-def get_background_music(duration):
-    tracks = PLAYLIST.copy()
-    random.shuffle(tracks)
-    for track in tracks:
-        try:
-            print(f"Musiqi yüklənməsi sınanır: {track['name']}")
-            res = requests.get(track["url"], headers=HEADERS, timeout=12)
-            if res.status_code == 200 and len(res.content) > 30000:
-                with open("bg_music.mp3", "wb") as f:
-                    f.write(res.content)
+        response = requests.get(url, headers=headers, timeout=12)
+        if response.status_code == 200:
+            # Pinterest şəkil URL-lərini təsbit edən REGEX
+            matches = re.findall(r'https://i\.pinimg\.com/[0-9ax]+/([a-f0-9/]+\.(?:jpg|png|webp))', response.text)
+            if matches:
+                # Ən böyük ölçü (736px) ilə şəkil linkini formalaşdırırıq
+                selected_img_id = random.choice(matches[:5]) # İlk 5 nəticədən təsadüfi birini seçirik
+                img_url = f"https://i.pinimg.com/736x/{selected_img_id}"
                 
-                full_bg = AudioFileClip("bg_music.mp3")
-                start_time = track.get("start", 0)
-                if start_time + duration > full_bg.duration:
-                    start_time = max(0, full_bg.duration - duration)
-                    
-                bg_audio = full_bg.subclip(start_time, start_time + duration)
-                bg_audio = bg_audio.volumex(0.25) # 25% Ses
-                print("Musiqi uğurla hazırlandı!")
-                return bg_audio
-        except Exception as e:
-            print(f"Trek xətası ({track['name']}):", e)
-    return None
-
-def create_video(text):
-    print("1. Mətn səsə çevrilir...")
-    asyncio.run(edge_tts.Communicate(text.split("#")[0].strip(), voice="az-AZ-BabekNeural").save("voice.mp3"))
-    voice_audio = AudioFileClip("voice.mp3")
-    duration = voice_audio.duration + 1.5
-
-    print("2. Arxa fon musiqisi əlavə olunur...")
-    bg_audio = get_background_music(duration)
-    
-    if bg_audio:
-        final_audio = CompositeAudioClip([voice_audio, bg_audio])
-    else:
-        final_audio = voice_audio
-
-    print("3. Şəkil və yeni dizayn hazırlanır...")
-    img_url = fetch_contextual_image(text)
-    frame_array = create_split_frame(text, img_url)
-    txt_clip = ImageClip(frame_array).set_duration(duration)
-
-    print("4. Video render edilir...")
-    video = CompositeVideoClip([txt_clip]).set_audio(final_audio)
-    video.write_videofile("reel.mp4", fps=24, codec="libx264", audio_codec="aac")
-
-    voice_audio.close()
-    video.close()
-
-def upload_to_tmp_host(file_path):
-    print("Video serverə yüklənir...")
-    try:
-        with open(file_path, 'rb') as f:
-            res = requests.post('https://tmpfiles.org/api/v1/upload', files={'file': f}, headers=HEADERS)
-            if res.status_code == 200:
-                return res.json()['data']['url'].replace("tmpfiles.org/", "tmpfiles.org/dl/")
-    except Exception:
-        pass
-
-    try:
-        with open(file_path, 'rb') as f:
-            res = requests.post('https://envs.sh', files={'file': f}, headers=HEADERS)
-            return res.text.strip()
-    except Exception:
-        return None
-
-def post_to_instagram(video_url, caption):
-    print(f"Instagram-a göndərilir...")
-    url = f"https://graph.facebook.com/v19.0/{INSTAGRAM_ACCOUNT_ID}/media"
-    payload = {"media_type": "REELS", "video_url": video_url, "caption": caption, "access_token": META_ACCESS_TOKEN}
-    res = requests.post(url, data=payload).json()
-    
-    if "id" not in res:
-        print("!!! XƏTA: Konteyner yaradılmadı:", res)
-        return
-
-    creation_id = res["id"]
-    print(f"Container ID: {creation_id}. Emal olunur...")
-
-    status_url = f"https://graph.facebook.com/v19.0/{creation_id}?fields=status_code,status_info&access_token={META_ACCESS_TOKEN}"
-    for i in range(20):
-        time.sleep(12)
-        status_res = requests.get(status_url).json()
-        print(f"Status yoxlaması {i+1}: {status_res}")
-        if status_res.get("status_code") == "FINISHED": break
-        if status_res.get("status_code") == "ERROR":
-            print("!!! XƏTA: Video rədd edildi!", status_res.get("status_info"))
-            return
-
-    pub_url = f"https://graph.facebook.com/v19.0/{INSTAGRAM_ACCOUNT_ID}/media_publish"
-    pub_res = requests.post(pub_url, data={"creation_id": creation_id, "access_token": META_ACCESS_TOKEN}).json()
-    print("!!! YAKUN CAVAB (PAYLAŞIM):", pub_res)
-
-if __name__ == "__main__":
-    print("1. Detallı fakt hazırlanır...")
-    caption = generate_car_fact()
-    print(f"Mətn:\n{caption}\n")
-
-    create_video(caption)
-
-    public_url = upload_to_tmp_host("reel.mp4")
-
-    try:
-        if public_url:
-            post_to_instagram(public_url, caption)
+                # Şəkli endiririk
+                img_res = requests.get(img_url, headers=headers, timeout=10)
+                if img_res.status_code == 200:
+                    with open("pinterest_bg.jpg", "wb") as f:
+                        f.write(img_res.content)
+                    print(f"✅ Pinterest şəkli uğurla endirildi: {img_url}")
+                    return "pinterest_bg.jpg"
     except Exception as e:
-        print("Instagram xətası:", e)
+        print(f"⚠️ Pinterest axtarışında xəta: {e}")
+    
+    # Ehtiyat mənbə (Əgər Pinterest bloklasa, eyni ingilis sözü ilə Unsplash HD istifadə edir)
+    print("🔄 Pinterest ehtiyat mənbəyə keçdi (Unsplash HD)...")
+    fallback_url = f"https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1080&h=1920&fit=crop"
+    img_data = requests.get(fallback_url).content
+    with open("pinterest_bg.jpg", "wb") as f:
+        f.write(img_data)
+    return "pinterest_bg.jpg"
 
-    if public_url:
-        print("\n" + "="*60)
-        print("📌 YAKUN VİDEO LİNKİ (Brauzerdə açıb baxın):")
-        print(public_url)
-        print("="*60 + "\n")
+# ==========================================
+# 3. VIRAL İNSTAGRAM MAHNISINI ƏLAVƏ ETMEK
+# ==========================================
+def download_viral_music(music_choice_key=None):
+    """
+    Instagram viral mahnısını endirir və yoxlayır.
+    """
+    if not music_choice_key or music_choice_key not in VIRAL_INSTAGRAM_MUSIC:
+        music_choice_key = random.choice(list(VIRAL_INSTAGRAM_MUSIC.keys()))
+    
+    music_url = VIRAL_INSTAGRAM_MUSIC[music_choice_key]
+    print(f"🎵 Seçilən Instagram Viral Mahnı: {music_choice_key}")
+    
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    r = requests.get(music_url, headers=headers, stream=True)
+    with open("bg_viral_music.mp3", "wb") as f:
+        for chunk in r.iter_content(chunk_size=8192):
+            f.write(chunk)
+            
+    print("✅ Viral mahnı hazırlandı.")
+    return "bg_viral_music.mp3"
+
+# ==========================================
+# 4. REELS / SHORTS VİDEOSUNU HAZIRLAMAQ
+# ==========================================
+def create_instagram_reel(az_text, english_search_query, music_key=None):
+    """
+    Mətni, ingilis dilində Pinterest şəklini və Instagram viral mahnısını birləşdirir.
+    """
+    print("\n🚀 Video hazırlanması başladı...")
+    
+    # 1. DİKATOR SƏSİ (gTTS Azərbaycan dili)
+    tts = gTTS(text=az_text, lang='az')
+    tts.save("voiceover.mp3")
+    voice_audio = AudioFileClip("voiceover.mp3")
+    duration = voice_audio.duration + 0.8  # Bir az əlavə vaxt
+    
+    # 2. PINTEREST ŞƏKİLİ (İngilis dilində axtarış)
+    img_path = fetch_pinterest_image_en(english_search_query)
+    
+    # Şəkli 1080x1920 (Vertical Reels/TikTok) formatına gətirmək
+    img = Image.open(img_path).convert("RGB")
+    img = img.resize((1080, 1920), Image.Resampling.LANCZOS)
+    img.save("processed_bg.jpg")
+    
+    bg_clip = ImageClip("processed_bg.jpg").set_duration(duration)
+    
+    # Zoom Effect (Hərəkətli Fon)
+    bg_clip = bg_clip.resize(lambda t: 1 + 0.04 * t)
+    
+    # 3. İNSTAGRAM VIRAL FON MAHNISI QARIŞDIRILMASI
+    music_file = download_viral_music(music_key)
+    bg_music = AudioFileClip(music_file)
+    
+    # Əgər mahnı qısadırsa dövr etdirsin (loop)
+    if bg_music.duration < duration:
+        bg_music = afx.audio_loop(bg_music, duration=duration)
+    
+    # Fond musiqisini kəsirik və səsini 18%-ə endiririk (Diktor aydın olsun deyə)
+    bg_music = bg_music.subclip(0, duration).volumex(0.18)
+    
+    # Səsləri birləşdiririk (Diktor səs + Viral Musiqi)
+    final_audio = CompositeAudioClip([voice_audio, bg_music])
+    
+    # 4. VİDEO YIĞILMASI
+    video = CompositeVideoClip([bg_clip]).set_duration(duration)
+    video = video.set_audio(final_audio)
+    
+    output_filename = "instagram_viral_reel.mp4"
+    video.write_videofile(
+        output_filename, 
+        fps=30, 
+        codec='libx264', 
+        audio_codec='aac',
+        preset='fast'
+    )
+    
+    # Təmizlik
+    voice_audio.close()
+    bg_music.close()
+    video.close()
+    print(f"\n🎉 VİDEO HAZIRDIR: {output_filename}")
+
+# ==========================================
+# 5. İŞƏ SALMAQ VƏ TEST EDƏRƏK YOXALMAQ
+# ==========================================
+if __name__ == "__main__":
+    # Nümunə Azərbaycan dilində Fakt
+    AZERBAIJANI_FACT = (
+        "Bilirdinizmi? Şəki Xan Sarayının tikintisində heç bir mismardan və ya yapışqandan "
+        "istifadə olunmayıb. Sarayın şəbəkə pəncərələri minlərlə xırda taxta və şüşə hissədən ibarətdir."
+    )
+    
+    # Pinterest üçün xüsusi İNGİLİS dilində axtarış sözü:
+    PINTEREST_ENGLISH_QUERY = "Sheki Khan Palace Azerbaijan aesthetic photography wallpaper"
+    
+    # İstədiyiniz viral mahnını seçə bilərsiniz:
+    # "1. Instagram Phonk Trend", "2. Aesthetic Lo-Fi Viral", "3. Cinematic Reel Trend", "4. Upbeat Energetic Trend"
+    SELECTED_VIRAL_MUSIC = "1. Instagram Phonk Trend"
+    
+    create_instagram_reel(
+        az_text=AZERBAIJANI_FACT,
+        english_search_query=PINTEREST_ENGLISH_QUERY,
+        music_key=SELECTED_VIRAL_MUSIC
+    )
 
