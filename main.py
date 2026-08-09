@@ -15,7 +15,6 @@ INSTAGRAM_ACCOUNT_ID = os.getenv("INSTAGRAM_ACCOUNT_ID")
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
 
-
 def generate_car_fact():
     prompt = (
         "Avtomobillər haqqında maraqlı, qısa və cəlb edici bir fakt yaz (Azərbaycan dilində). "
@@ -30,11 +29,6 @@ def generate_car_fact():
             print(f"Limit xətası oldu, 20 saniyə gözlənilir... (Cəhd {attempt + 1})")
             time.sleep(20)
     raise Exception("API cavab vermədi.")
-
-
-    )
-    response = model.generate_content(prompt)
-    return response.text
 
 # 3. Mətni səsə çevirmək (edge-tts)
 async def create_audio(text, output_file="voice.mp3"):
@@ -142,4 +136,4 @@ if __name__ == "__main__":
 
     print("4. Instagram-a göndərilir...")
     post_to_instagram(public_url, caption)
-  
+
