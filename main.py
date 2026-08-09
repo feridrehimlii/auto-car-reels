@@ -4,45 +4,43 @@ import random
 import asyncio
 import requests
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from google import genai
 import edge_tts
 from moviepy.editor import CompositeVideoClip, AudioFileClip, ImageClip, CompositeAudioClip
 
-# 1. Environment dəyişənləri
+# 1. Environment Dəyişənləri
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN")
 INSTAGRAM_ACCOUNT_ID = os.getenv("INSTAGRAM_ACCOUNT_ID")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Yüksək keyfiyyətli avtomobil şəkilləri
-CAR_IMAGES = [
-    "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?q=80&w=1080&auto=format&fit=crop", # Porsche
-    "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=1080&auto=format&fit=crop", # Supercar
-    "https://images.unsplash.com/photo-1544829099-b9a0c07fad1a?q=80&w=1080&auto=format&fit=crop", # BMW
-    "https://images.unsplash.com/photo-1618843479313-40f8afb4b4d8?q=80&w=1080&auto=format&fit=crop", # Mercedes
-    "https://images.unsplash.com/photo-1603584173870-7f23fdae1b7a?q=80&w=1080&auto=format&fit=crop"  # Audi
-]
-
-# Doğrudan yüklənə bilən arxa fon musiqisi keçidi
-BG_MUSIC_URL = "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3"
-
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
+# Playlist: url = MP3 keçiıdi, start = Mahnının ən aktiv/dinamik hissəsinin başladığı saniyə
+PLAYLIST = [
+    {
+        "url": "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3",
+        "start": 15  # 15-ci saniyədən (Drop hissəsindən) başlayır
+    },
+    {
+        "url": "https://cdn.pixabay.com/download/audio/2022/11/18/audio_83d379bd43.mp3",
+        "start": 20  # 20-ci saniyədən başlayır
+    }
+]
+
 FALLBACK_FACTS = [
-    "Bugatti Chiron mühərriki tam gücü ilə işləyərkən 100 litrlik yanacaq çənini cəmi 9 dəqiqəyə boşaldır! 🏎️ #bugatti #hypercar #supercar #azərbaycan",
-    "Dünyada ilk yol hərəkəti işıqları 1868-ci ildə Londonda quraşdırılıb və qazla işləyirdi. 🚦 #avto #tarix #maraqli #baku",
-    "Rolls-Royce avtomobillərinin salondakı saatı o qədər sakit işləyir ki, 100 km/saat sürətlə gedərkən eşidilən tək səs həmin saatın çıqqıltısı olur. 🚘 #rollsroyce #luxury #avtomobil #azerbaijan",
-    "Dünyanın ən uzun tıxacı 2010-cu ildə Çində baş verib və tam 12 gün davam edib! Sürücülər gündə cəmi 1 km hərəkət edə bilirdilər. 🚗 #carfacts #maraqlifactlar #autolife #azərbaycan"
+    "Dünyanın ən uzun tıxacı 2010-cu ildə Çində baş verib və tam 12 gün davam edib! Peqin-Tibet magistralında yaranan bu nəhəng tıxacın uzunluğu 100 kilometrdən çox idi. Sürücülər gün ərzində cəmi 1 kilometr hərəkət edə bilirdilər. Yolda qalan insanlara ərzaq və su satmaq üçün yerli sakinlər xüsusi ticarət şəbəkəsi qurmuşdular. 🚗 #carfacts #maraqlifactlar #autolife #azərbaycan",
+    "Bugatti Chiron mühərriki tam gücü ilə işləyərkən 100 litrlik yanacaq çənini cəmi 9 dəqiqəyə tamamilə boşaldır! Bu möhtəşəm 8.0 litrlik W16 mühərriki dəqiqədə 60 min litrdən çox hava sorur. Yanacaq nasosu isə dəqiqədə 15 litr benzin vurur. Bu inanılmaz göstəricilər hiperkarın niyə dünyanın ən sürətli avtomobillərindən biri olduğunu bir daha sübut edir. 🏎️ #bugatti #hypercar #supercar #azərbaycan"
 ]
 
 def generate_car_fact():
     prompt = (
-        "Avtomobillər haqqında maraqlı, qısa və cəlb edici bir fakt yaz (Azərbaycan dilində). "
-        "Mətn maksimum 2-3 cümlə olsun, Reels videosu üçün səsli oxunacaq. "
+        "Avtomobillər haqqında çox maraqlı, detallı və diqqətçəkən bir fakt yaz (Azərbaycan dilində). "
+        "Mətn kifayət qədər zəngin və uzun olsun ki, səsli oxunuşu təxminən 15-20 saniyə çəksin (təxminən 45-60 söz). "
         "Sonda da 3-4 cəlbedici həştəq əlavə et."
     )
     candidate_models = ["gemini-2.0-flash", "gemini-2.0-flash-lite"]
@@ -54,21 +52,49 @@ def generate_car_fact():
             continue
     return random.choice(FALLBACK_FACTS)
 
-def create_styled_frame(text, width=1080, height=1920):
-    img_url = random.choice(CAR_IMAGES)
+def fetch_contextual_image(fact_text):
+    print("AI mövzuya uyğun şəkil axtarır...")
     try:
-        res = requests.get(img_url, headers=HEADERS, timeout=10)
-        img = Image.open(requests.get(img_url, headers=HEADERS, stream=True).raw).convert('RGBA')
-        img = img.resize((width, height))
-    except Exception:
-        img = Image.new('RGBA', (width, height), (20, 20, 30, 255))
+        kw_prompt = f"Extract 2-3 specific English search keywords describing the exact main subject of this text for photo search. Output ONLY keywords separated by space (e.g. 'china traffic jam', 'bugatti chiron engine', 'classic rolls royce'):\n{fact_text[:200]}"
+        kw_res = client.models.generate_content(model="gemini-2.0-flash", contents=kw_prompt)
+        query = kw_res.text.strip().replace("\n", "").replace('"', '')
+        print(f"Axtarış sözləri: '{query}'")
 
-    overlay = Image.new('RGBA', (width, height), (0, 0, 0, 160))
+        wiki_url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={query}&gsrnamespace=6&prop=imageinfo&iiprop=url&format=json&gsrlimit=5"
+        res = requests.get(wiki_url, headers=HEADERS, timeout=8).json()
+        pages = res.get("query", {}).get("pages", {})
+        
+        image_urls = []
+        for p in pages.values():
+            info = p.get("imageinfo", [{}])[0]
+            url = info.get("url")
+            if url and any(url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png']):
+                image_urls.append(url)
+
+        if image_urls:
+            selected_url = random.choice(image_urls)
+            print(f"Mövzuya uyğun şəkil tapıldı: {selected_url}")
+            return selected_url
+    except Exception as e:
+        print(f"Şəkil axtarışında xəta: {e}")
+
+    return "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=1080"
+
+def create_styled_frame(text, img_url, width=1080, height=1920):
+    try:
+        res = requests.get(img_url, headers=HEADERS, stream=True, timeout=10)
+        img = Image.open(res.raw).convert('RGBA')
+        img = ImageOps.fit(img, (width, height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+    except Exception as e:
+        print("Şəkil yüklənmədi, tünd fon yaradılır:", e)
+        img = Image.new('RGBA', (width, height), (15, 20, 30, 255))
+
+    overlay = Image.new('RGBA', (width, height), (0, 0, 0, 80))
     img = Image.alpha_composite(img, overlay)
 
     draw = ImageDraw.Draw(img)
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 42)
     except Exception:
         font = ImageFont.load_default()
 
@@ -78,7 +104,7 @@ def create_styled_frame(text, width=1080, height=1920):
     current_line = []
     for word in words:
         current_line.append(word)
-        if len(" ".join(current_line)) > 20:
+        if len(" ".join(current_line)) > 24:
             lines.append(" ".join(current_line[:-1]))
             current_line = [word]
     if current_line:
@@ -88,12 +114,32 @@ def create_styled_frame(text, width=1080, height=1920):
     bbox = draw.multiline_textbbox((0, 0), display_text, font=font, align="center")
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
-    
-    x = (width - text_w) / 2
-    y = (height - text_h) / 2
 
-    draw.multiline_text((x+3, y+3), display_text, fill=(0, 0, 0, 255), font=font, align="center")
-    draw.multiline_text((x, y), display_text, fill=(255, 255, 255, 255), font=font, align="center")
+    # MAVİ FON (Aşağı hissə)
+    padding_x = 40
+    padding_y = 35
+    banner_w = min(text_w + (padding_x * 2), width - 80)
+    banner_h = text_h + (padding_y * 2)
+    
+    banner_y1 = height - banner_h - 250
+    banner_y2 = height - 250
+    banner_x1 = (width - banner_w) / 2
+    banner_x2 = banner_x1 + banner_w
+
+    banner_layer = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    banner_draw = ImageDraw.Draw(banner_layer)
+    banner_draw.rounded_rectangle(
+        [banner_x1, banner_y1, banner_x2, banner_y2],
+        radius=25,
+        fill=(10, 60, 150, 230)  # Tünd Kral Mavisi + Şəffaf
+    )
+    img = Image.alpha_composite(img, banner_layer)
+
+    draw = ImageDraw.Draw(img)
+    text_x = (width - text_w) / 2
+    text_y = banner_y1 + padding_y
+
+    draw.multiline_text((text_x, text_y), display_text, fill=(255, 255, 255, 255), font=font, align="center")
 
     return np.array(img.convert('RGB'))
 
@@ -103,25 +149,35 @@ def create_video(text):
     voice_audio = AudioFileClip("voice.mp3")
     duration = voice_audio.duration + 1.5
 
-    # Musiqini təhlükəsiz yükləmək
+    # Musiqi Seçimi və Ən Dinamik Hissənin Kəsilməsi
+    selected_track = random.choice(PLAYLIST)
     final_audio = voice_audio
     try:
-        print("Arxa fon musiqisi yüklənir...")
-        res = requests.get(BG_MUSIC_URL, headers=HEADERS, timeout=10)
+        print(f"Playlist-dən mahnı yüklənir...")
+        res = requests.get(selected_track["url"], headers=HEADERS, timeout=10)
         if res.status_code == 200 and len(res.content) > 10000:
             with open("bg_music.mp3", "wb") as f:
                 f.write(res.content)
             
-            bg_audio = AudioFileClip("bg_music.mp3").subclip(0, duration)
-            bg_audio = bg_audio.volumex(0.15)
+            full_bg = AudioFileClip("bg_music.mp3")
+            start_time = selected_track.get("start", 0)
+            
+            # Əgər göstərilən saniyə mahnının uzunluğundan böyükdürsə, tənzimləyirik
+            if start_time + duration > full_bg.duration:
+                start_time = max(0, full_bg.duration - duration)
+                
+            # Mahnının ən aktiv hissəsini kəsirik
+            bg_audio = full_bg.subclip(start_time, start_time + duration)
+            
+            # SƏS SƏVİYYƏSİ: 30% (0.30)
+            bg_audio = bg_audio.volumex(0.30) 
             final_audio = CompositeAudioClip([voice_audio, bg_audio])
-            print("Musiqi uğurla əlavə edildi!")
-        else:
-            print("⚠️ Musiqi faylı tam yüklənmədi, yalnız diktor səsi istifadə olunur.")
+            print(f"Mahnının {start_time}-ci saniyəsindən başlayan dinamik hissə əlavə edildi (Səs: 30%).")
     except Exception as e:
-        print(f"⚠️ Musiqi yüklənərkən xəta yarandı ({e}), yalnız diktor səsi ilə davam edilir.")
+        print("Musiqi işlənməsində xəta, yalnız diktor səsi istifadə olunur:", e)
 
-    frame_array = create_styled_frame(text)
+    img_url = fetch_contextual_image(text)
+    frame_array = create_styled_frame(text, img_url)
     txt_clip = ImageClip(frame_array).set_duration(duration)
 
     video = CompositeVideoClip([txt_clip]).set_audio(final_audio)
@@ -137,15 +193,15 @@ def upload_to_tmp_host(file_path):
             res = requests.post('https://tmpfiles.org/api/v1/upload', files={'file': f}, headers=HEADERS)
             if res.status_code == 200:
                 return res.json()['data']['url'].replace("tmpfiles.org/", "tmpfiles.org/dl/")
-    except Exception as e:
-        print("tmpfiles xətası:", e)
+    except Exception:
+        pass
 
     with open(file_path, 'rb') as f:
         res = requests.post('https://envs.sh', files={'file': f}, headers=HEADERS)
         return res.text.strip()
 
 def post_to_instagram(video_url, caption):
-    print(f"Instagram-a göndərilir: {video_url}")
+    print(f"Instagram-a göndərilir...")
     url = f"https://graph.facebook.com/v19.0/{INSTAGRAM_ACCOUNT_ID}/media"
     payload = {"media_type": "REELS", "video_url": video_url, "caption": caption, "access_token": META_ACCESS_TOKEN}
     res = requests.post(url, data=payload).json()
@@ -172,16 +228,16 @@ def post_to_instagram(video_url, caption):
     print("!!! YAKUN CAVAB (PAYLAŞIM):", pub_res)
 
 if __name__ == "__main__":
-    print("1. Fakt seçilir...")
+    print("1. Detallı fakt hazırlanır...")
     caption = generate_car_fact()
     print(f"Mətn:\n{caption}\n")
 
-    print("2. Şəkilli və Musiqili Video yaradılır...")
+    print("2. Video hazırlanır...")
     create_video(caption)
 
     print("3. Yüklənir...")
     public_url = upload_to_tmp_host("reel.mp4")
 
-    print("4. Paylaşılır...")
+    print("4. Instagram-da paylaşılır...")
     post_to_instagram(public_url, caption)
 
