@@ -20,15 +20,15 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
-# Playlist: url = MP3 keçiıdi, start = Mahnının ən aktiv/dinamik hissəsinin başladığı saniyə
+# Playlist: url = MP3 keçidi, start = Mahnının ən aktiv/dinamik hissəsinin başladığı saniyə
 PLAYLIST = [
     {
         "url": "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3",
-        "start": 15  # 15-ci saniyədən (Drop hissəsindən) başlayır
+        "start": 15
     },
     {
         "url": "https://cdn.pixabay.com/download/audio/2022/11/18/audio_83d379bd43.mp3",
-        "start": 20  # 20-ci saniyədən başlayır
+        "start": 20
     }
 ]
 
@@ -131,7 +131,7 @@ def create_styled_frame(text, img_url, width=1080, height=1920):
     banner_draw.rounded_rectangle(
         [banner_x1, banner_y1, banner_x2, banner_y2],
         radius=25,
-        fill=(10, 60, 150, 230)  # Tünd Kral Mavisi + Şəffaf
+        fill=(10, 60, 150, 230)
     )
     img = Image.alpha_composite(img, banner_layer)
 
@@ -149,7 +149,6 @@ def create_video(text):
     voice_audio = AudioFileClip("voice.mp3")
     duration = voice_audio.duration + 1.5
 
-    # Musiqi Seçimi və Ən Dinamik Hissənin Kəsilməsi
     selected_track = random.choice(PLAYLIST)
     final_audio = voice_audio
     try:
@@ -162,17 +161,12 @@ def create_video(text):
             full_bg = AudioFileClip("bg_music.mp3")
             start_time = selected_track.get("start", 0)
             
-            # Əgər göstərilən saniyə mahnının uzunluğundan böyükdürsə, tənzimləyirik
             if start_time + duration > full_bg.duration:
                 start_time = max(0, full_bg.duration - duration)
                 
-            # Mahnının ən aktiv hissəsini kəsirik
             bg_audio = full_bg.subclip(start_time, start_time + duration)
-            
-            # SƏS SƏVİYYƏSİ: 30% (0.30)
-            bg_audio = bg_audio.volumex(0.30) 
+            bg_audio = bg_audio.volumex(0.30) # Səs 30%
             final_audio = CompositeAudioClip([voice_audio, bg_audio])
-            print(f"Mahnının {start_time}-ci saniyəsindən başlayan dinamik hissə əlavə edildi (Səs: 30%).")
     except Exception as e:
         print("Musiqi işlənməsində xəta, yalnız diktor səsi istifadə olunur:", e)
 
@@ -196,9 +190,13 @@ def upload_to_tmp_host(file_path):
     except Exception:
         pass
 
-    with open(file_path, 'rb') as f:
-        res = requests.post('https://envs.sh', files={'file': f}, headers=HEADERS)
-        return res.text.strip()
+    try:
+        with open(file_path, 'rb') as f:
+            res = requests.post('https://envs.sh', files={'file': f}, headers=HEADERS)
+            return res.text.strip()
+    except Exception as e:
+        print("Yükləmə xətası:", e)
+        return None
 
 def post_to_instagram(video_url, caption):
     print(f"Instagram-a göndərilir...")
@@ -235,9 +233,29 @@ if __name__ == "__main__":
     print("2. Video hazırlanır...")
     create_video(caption)
 
-    print("3. Yüklənir...")
+    print("3. Serverə yüklənir...")
     public_url = upload_to_tmp_host("reel.mp4")
 
+    # VİDEO LİNKİNİ LOQLARDA ƏN BÖYÜK ŞƏKİLDƏ ÇAP EDİRİK
+    if public_url:
+        print("\n" + "="*60)
+        print("🎬 HAZIRLANAN VİDEONU İZLƏMƏK ÜÇÜN LİNK:")
+        print(public_url)
+        print("="*60 + "\n")
+    else:
+        print("⚠️ Video serverə yüklənə bilmədi.")
+
     print("4. Instagram-da paylaşılır...")
-    post_to_instagram(public_url, caption)
+    try:
+        if public_url:
+            post_to_instagram(public_url, caption)
+    except Exception as e:
+        print("Instagram paylaşımı zamanı xəta oldu:", e)
+
+    # NƏTİCƏNİ ƏN SONDA YENİDƏN ÇAP EDİRİK (İnstagram paylaşılmasa belə görəsiniz)
+    if public_url:
+        print("\n" + "="*60)
+        print("📌 YAKUN VİDEO LİNKİ (Yenidən baxmaq üçün kopyalayın):")
+        print(public_url)
+        print("="*60 + "\n")
 
