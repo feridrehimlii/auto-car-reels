@@ -20,22 +20,22 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 }
 
-# 🎵 Playlista Uyğun Açıq Phonk / Drift MP3 Keçidləri
+# 🎵 ZƏMANƏTLİ VƏ BİRBAŞA YÜKLƏNƏN PHONK MUSİQİLƏRİ
 PLAYLIST = [
     {
-        "name": "Phonk Track 1",
-        "url": "https://cdn.pixabay.com/download/audio/2023/09/24/audio_34190c1f51.mp3",
-        "start": 12
+        "name": "Aggressive Drift Phonk",
+        "url": "https://ia801503.us.archive.org/15/items/phonk-background-music/phonk1.mp3",
+        "start": 10
     },
     {
-        "name": "Phonk Track 2",
-        "url": "https://cdn.pixabay.com/download/audio/2022/11/18/audio_83d379bd43.mp3",
+        "name": "Cyber Phonk Beat",
+        "url": "https://ia801503.us.archive.org/15/items/phonk-background-music/phonk2.mp3",
         "start": 15
     },
     {
-        "name": "Phonk Track 3",
-        "url": "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3",
-        "start": 10
+        "name": "Rio Drift Funk",
+        "url": "https://ia801503.us.archive.org/15/items/phonk-background-music/phonk3.mp3",
+        "start": 12
     }
 ]
 
@@ -59,55 +59,66 @@ def generate_car_fact():
             continue
     return random.choice(FALLBACK_FACTS)
 
-# 2. DƏQİQ MÖVZU ŞƏKLİ AXTARIŞI (Wikipedia Search Engine)
+# 2. ŞƏKİL AXTARIŞI (Wikipedia Deep Search & Fallback)
 def fetch_contextual_image(fact_text):
     print("AI mövzuya uyğun şəkil axtarır...")
     try:
         kw_prompt = (
-            "Read this Azerbaijani car fact text and output ONLY 1-3 English search keywords "
-            "describing the main car or topic (e.g. 'Bugatti Chiron', 'Traffic jam', 'Car engine'). "
-            f"Do NOT write anything else:\n\n{fact_text[:250]}"
+            "Extract ONLY 1-3 English search keywords describing the main vehicle or subject "
+            "(e.g. 'Bugatti Chiron', 'Traffic jam', 'Engine'). Do not write full sentences:\n"
+            f"{fact_text[:250]}"
         )
         kw_res = client.models.generate_content(model="gemini-2.0-flash", contents=kw_prompt)
-        query = kw_res.text.strip().replace("\n", "").replace('"', '').replace("'", "")
+        query = kw_res.text.strip().replace('"', '').replace("'", "").replace(".", "")
         print(f"Axtarılan mövzu: '{query}'")
 
-        # Wikipedia Axtarış API
-        search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(query)}&format=json"
-        s_res = requests.get(search_url, headers=HEADERS, timeout=8).json()
+        wiki_search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(query)}&format=json"
+        s_res = requests.get(wiki_search_url, headers=HEADERS, timeout=8).json()
         search_results = s_res.get("query", {}).get("search", [])
 
-        if search_results:
-            page_title = search_results[0]["title"]
-            print(f"Tapılan məqalə: '{page_title}'")
-            
-            page_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(page_title)}"
-            p_res = requests.get(page_url, headers=HEADERS, timeout=8).json()
+        for item in search_results[:3]:
+            page_title = item["title"]
+            summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(page_title)}"
+            p_res = requests.get(summary_url, headers=HEADERS, timeout=8).json()
             
             if "originalimage" in p_res and "source" in p_res["originalimage"]:
                 img_url = p_res["originalimage"]["source"]
-                print(f"Mövzuya dəqiq uyğun şəkil tapıldı: {img_url}")
+                print(f"Wikipedia-dan foto tapıldı: {img_url}")
                 return img_url
     except Exception as e:
         print(f"Şəkil axtarış xətası: {e}")
 
-    return "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?q=80&w=1080"
+    # Fallback Yüksək Keyfiyyətli Avtomobil Şəkilləri
+    fallbacks = [
+        "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?q=80&w=1080",
+        "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=1080",
+        "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?q=80&w=1080"
+    ]
+    return random.choice(fallbacks)
 
-def create_styled_frame(text, img_url, width=1080, height=1920):
+# 3. YENİ DİZAYN: YUXARI ŞƏKİL, AŞAĞI YAZI
+def create_split_frame(text, img_url, width=1080, height=1920):
+    # Fon: Tünd göy/boz
+    canvas = Image.new('RGB', (width, height), (15, 23, 42))
+
+    # Yuxarı Hissə (1080x1080 Kvadrat Şəkil Sahəsi)
+    img_h = 1080
     try:
         res = requests.get(img_url, headers=HEADERS, stream=True, timeout=10)
-        img = Image.open(res.raw).convert('RGBA')
-        img = ImageOps.fit(img, (width, height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+        if res.status_code == 200:
+            top_img = Image.open(res.raw).convert('RGB')
+            top_img = ImageOps.fit(top_img, (width, img_h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+            canvas.paste(top_img, (0, 0))
     except Exception as e:
-        print("Şəkil yüklənmədi, tünd fon yaradılır:", e)
-        img = Image.new('RGBA', (width, height), (15, 20, 30, 255))
+        print("Şəkil yüklənmədi, tünd fon saxlanılır:", e)
 
-    overlay = Image.new('RGBA', (width, height), (0, 0, 0, 70))
-    img = Image.alpha_composite(img, overlay)
+    draw = ImageDraw.Draw(canvas)
+    
+    # İki hissə arasında göy bəzək xətti
+    draw.line([(0, img_h), (width, img_h)], fill=(59, 130, 246), width=8)
 
-    draw = ImageDraw.Draw(img)
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 38)
     except Exception:
         font = ImageFont.load_default()
 
@@ -117,77 +128,72 @@ def create_styled_frame(text, img_url, width=1080, height=1920):
     current_line = []
     for word in words:
         current_line.append(word)
-        if len(" ".join(current_line)) > 26:
+        if len(" ".join(current_line)) > 28:
             lines.append(" ".join(current_line[:-1]))
             current_line = [word]
     if current_line:
         lines.append(" ".join(current_line))
     display_text = "\n".join(lines)
 
+    # Aşağı sahədə mərkəzləşdirmə (Aşağı sahənin hündürlüyü: 840px)
     bbox = draw.multiline_textbbox((0, 0), display_text, font=font, align="center")
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
 
-    # BÜTÖV MAVİ BANNER (AŞAĞIDA SOLDAN SAĞA BÜTÖV)
-    padding_y = 35
-    banner_h = text_h + (padding_y * 2)
-    
-    banner_y2 = height - 120
-    banner_y1 = banner_y2 - banner_h
-
-    banner_layer = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-    banner_draw = ImageDraw.Draw(banner_layer)
-    banner_draw.rectangle(
-        [0, banner_y1, width, banner_y2],
-        fill=(10, 50, 140, 230)
-    )
-    img = Image.alpha_composite(img, banner_layer)
-
-    draw = ImageDraw.Draw(img)
+    bottom_area_h = height - img_h
     text_x = (width - text_w) / 2
-    text_y = banner_y1 + padding_y
+    text_y = img_h + (bottom_area_h - text_h) / 2
 
-    draw.multiline_text((text_x, text_y), display_text, fill=(255, 255, 255, 255), font=font, align="center")
+    # Yazını tam aşağı hissəyə çəkmək
+    draw.multiline_text((text_x, text_y), display_text, fill=(255, 255, 255), font=font, align="center", spacing=15)
 
-    return np.array(img.convert('RGB'))
+    return np.array(canvas)
+
+# 4. MUSİQİ YÜKLƏMƏ FUNKSİYASI (Mütləq tapır)
+def get_background_music(duration):
+    tracks = PLAYLIST.copy()
+    random.shuffle(tracks)
+    for track in tracks:
+        try:
+            print(f"Musiqi yüklənməsi sınanır: {track['name']}")
+            res = requests.get(track["url"], headers=HEADERS, timeout=12)
+            if res.status_code == 200 and len(res.content) > 30000:
+                with open("bg_music.mp3", "wb") as f:
+                    f.write(res.content)
+                
+                full_bg = AudioFileClip("bg_music.mp3")
+                start_time = track.get("start", 0)
+                if start_time + duration > full_bg.duration:
+                    start_time = max(0, full_bg.duration - duration)
+                    
+                bg_audio = full_bg.subclip(start_time, start_time + duration)
+                bg_audio = bg_audio.volumex(0.25) # 25% Ses
+                print("Musiqi uğurla hazırlandı!")
+                return bg_audio
+        except Exception as e:
+            print(f"Trek xətası ({track['name']}):", e)
+    return None
 
 def create_video(text):
-    print("Mətn səsə çevrilir...")
+    print("1. Mətn səsə çevrilir...")
     asyncio.run(edge_tts.Communicate(text.split("#")[0].strip(), voice="az-AZ-BabekNeural").save("voice.mp3"))
     voice_audio = AudioFileClip("voice.mp3")
     duration = voice_audio.duration + 1.5
 
-    # Musiqi Yüklənməsi
-    selected_track = random.choice(PLAYLIST)
-    print(f"Seçilən mahnı: {selected_track['name']}")
-    final_audio = voice_audio
+    print("2. Arxa fon musiqisi əlavə olunur...")
+    bg_audio = get_background_music(duration)
+    
+    if bg_audio:
+        final_audio = CompositeAudioClip([voice_audio, bg_audio])
+    else:
+        final_audio = voice_audio
 
-    try:
-        print(f"Musiqi yüklənir: {selected_track['url']}")
-        res = requests.get(selected_track["url"], headers=HEADERS, allow_redirects=True, timeout=12)
-        if res.status_code == 200 and len(res.content) > 30000:
-            with open("bg_music.mp3", "wb") as f:
-                f.write(res.content)
-            
-            full_bg = AudioFileClip("bg_music.mp3")
-            start_time = selected_track.get("start", 0)
-            
-            if start_time + duration > full_bg.duration:
-                start_time = max(0, full_bg.duration - duration)
-                
-            bg_audio = full_bg.subclip(start_time, start_time + duration)
-            bg_audio = bg_audio.volumex(0.30)  # Səsi 30% etmək
-            final_audio = CompositeAudioClip([voice_audio, bg_audio])
-            print("Musiqi uğurla videoya miksləndi!")
-        else:
-            print(f"⚠️ Musiqi yüklənə bilmədi (Status: {res.status_code}, Ölçü: {len(res.content)})")
-    except Exception as e:
-        print("⚠️ Musiqi emalında xəta oldu:", e)
-
+    print("3. Şəkil və yeni dizayn hazırlanır...")
     img_url = fetch_contextual_image(text)
-    frame_array = create_styled_frame(text, img_url)
+    frame_array = create_split_frame(text, img_url)
     txt_clip = ImageClip(frame_array).set_duration(duration)
 
+    print("4. Video render edilir...")
     video = CompositeVideoClip([txt_clip]).set_audio(final_audio)
     video.write_videofile("reel.mp4", fps=24, codec="libx264", audio_codec="aac")
 
@@ -243,13 +249,10 @@ if __name__ == "__main__":
     caption = generate_car_fact()
     print(f"Mətn:\n{caption}\n")
 
-    print("2. Video hazırlanır...")
     create_video(caption)
 
-    print("3. Serverə yüklənir...")
     public_url = upload_to_tmp_host("reel.mp4")
 
-    print("4. Instagram-da paylaşılır...")
     try:
         if public_url:
             post_to_instagram(public_url, caption)
