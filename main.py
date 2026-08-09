@@ -17,7 +17,6 @@ INSTAGRAM_ACCOUNT_ID = os.getenv("INSTAGRAM_ACCOUNT_ID")
 # 2. Google GenAI SDK tənzimləməsi
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# API limitdə olduqda istifadə olunacaq hazır ehtiyat faktlar
 FALLBACK_FACTS = [
     "Bugatti Chiron mühərriki tam gücü ilə işləyərkən 100 litrlik yanacaq çənini cəmi 9 dəqiqəyə boşaldır! 🏎️ #bugatti #hypercar #supercar #azərbaycan",
     "Dünyada ilk yol hərəkəti işıqları 1868-ci ildə Londonda quraşdırılıb və qazla işləyirdi. 🚦 #avto #tarix #maraqli #baku",
@@ -56,20 +55,39 @@ async def create_audio(text, output_file="voice.mp3"):
     communicate = edge_tts.Communicate(tts_text, voice="az-AZ-BabekNeural")
     await communicate.save(output_file)
 
-# 4. Videonu keçici ictimai URL-ə yükləmək
+# 4. Videonu keçici ictimai URL-ə yükləmək (YENİLƏNMİŞ VƏ DAHA GÜCLÜ)
 def upload_to_tmp_host(file_path):
-    with open(file_path, 'rb') as f:
-        response = requests.post('https://catbox.moe/user/api.php', data={'reqtype': 'fileupload'}, files={'fileToUpload': f})
-    if response.status_code == 200:
-        return response.text.strip()
-    raise Exception("Fayl yüklənərkən xəta baş verdi: " + response.text)
+    print("Video serverə yüklənir...")
+    
+    # Cəhd 1: tmpfiles.org
+    try:
+        with open(file_path, 'rb') as f:
+            res = requests.post('https://tmpfiles.org/api/v1/upload', files={'file': f})
+        if res.status_code == 200:
+            data = res.json()
+            direct_url = data['data']['url'].replace("tmpfiles.org/", "tmpfiles.org/dl/")
+            print("tmpfiles.org uğurla işlədi!")
+            return direct_url
+    except Exception as e:
+        print("tmpfiles.org xəta verdi:", e)
 
-# Pillow (PIL) vasitəsilə ImageMagick olmadan mətn şəkli yaratmaq
+    # Cəhd 2: envs.sh
+    try:
+        with open(file_path, 'rb') as f:
+            res = requests.post('https://envs.sh', files={'file': f})
+        if res.status_code == 200:
+            print("envs.sh uğurla işlədi!")
+            return res.text.strip()
+    except Exception as e:
+        print("envs.sh xəta verdi:", e)
+        
+    raise Exception("Heç bir video serverinə yükləmək mümkün olmadı!")
+
+# 5. Reels videosunu hazırlamaq
 def create_text_image(text, width=1080, height=1920):
     img = Image.new('RGBA', (width, height), (15, 15, 20, 255))
     draw = ImageDraw.Draw(img)
     
-    # Şrifti yükləyirik
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 46)
     except Exception:
@@ -77,7 +95,6 @@ def create_text_image(text, width=1080, height=1920):
 
     tts_text = text.split("#")[0].strip()
 
-    # Mətni sətirlərə bölürük
     words = tts_text.split()
     lines = []
     current_line = []
@@ -90,7 +107,6 @@ def create_text_image(text, width=1080, height=1920):
         lines.append(" ".join(current_line))
     display_text = "\n".join(lines)
 
-    # Mətni ekranın mərkəzinə yerləşdiririk
     bbox = draw.multiline_textbbox((0, 0), display_text, font=font, align="center")
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
@@ -102,14 +118,12 @@ def create_text_image(text, width=1080, height=1920):
     
     return np.array(img)
 
-# 5. Reels videosunu hazırlamaq
 def create_video(text):
     asyncio.run(create_audio(text))
     
     audio_clip = AudioFileClip("voice.mp3")
     duration = audio_clip.duration + 1
 
-    # Mətni şəkil kimi yaradıb klipə çeviririk
     txt_img_array = create_text_image(text)
     txt_clip = ImageClip(txt_img_array).set_duration(duration)
 
@@ -168,5 +182,4 @@ if __name__ == "__main__":
 
     print("4. Instagram-a göndərilir...")
     post_to_instagram(public_url, caption)
-
 
