@@ -2,7 +2,6 @@ import os
 import time
 import random
 import asyncio
-import re
 import requests
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -18,27 +17,15 @@ INSTAGRAM_ACCOUNT_ID = os.getenv("INSTAGRAM_ACCOUNT_ID")
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Accept-Language": "en-US,en;q=0.9"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 }
 
-# 🎵 INSTAGRAM VIRAL PHONK MUSİQİLƏRİ (Direct CDN Links)
-VIRAL_MUSIC_LIST = [
-    {
-        "name": "Aggressive Drift Phonk Trend",
-        "url": "https://ia801503.us.archive.org/15/items/phonk-background-music/phonk1.mp3",
-        "start": 10
-    },
-    {
-        "name": "Cyber Phonk Beat",
-        "url": "https://ia801503.us.archive.org/15/items/phonk-background-music/phonk2.mp3",
-        "start": 15
-    },
-    {
-        "name": "Rio Drift Funk",
-        "url": "https://ia801503.us.archive.org/15/items/phonk-background-music/phonk3.mp3",
-        "start": 12
-    }
+# 🎵 ZƏMANƏTLİ VƏ YAZILAN MAHNILAR SİYAHISI
+MUSIC_SOURCES = [
+    "https://ia801503.us.archive.org/15/items/phonk-background-music/phonk1.mp3",
+    "https://ia801503.us.archive.org/15/items/phonk-background-music/phonk2.mp3",
+    "https://ia801503.us.archive.org/15/items/phonk-background-music/phonk3.mp3",
+    "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3"
 ]
 
 FALLBACK_FACTS = [
@@ -52,8 +39,7 @@ def generate_car_fact():
         "Mətn kifayət qədər zəngin və uzun olsun ki, səsli oxunuşu təxminən 15-20 saniyə çəksin (təxminən 45-60 söz). "
         "Sonda da 3-4 cəlbedici həştəq əlavə et."
     )
-    candidate_models = ["gemini-2.0-flash", "gemini-2.0-flash-lite"]
-    for model_name in candidate_models:
+    for model_name in ["gemini-2.0-flash", "gemini-2.0-flash-lite"]:
         try:
             response = client.models.generate_content(model=model_name, contents=prompt)
             return response.text
@@ -61,83 +47,64 @@ def generate_car_fact():
             continue
     return random.choice(FALLBACK_FACTS)
 
-# 2. PINTEREST VƏ İNGİLİS DİLİNDƏ ŞƏKİL AXTARIŞI
-def fetch_pinterest_image_en(fact_text):
-    print("AI mövzunun ingiliscə açar sözlərini hazırlayır...")
+# 2. DƏQİQ MÖVZU ŞƏKLİ (WIKIPEDIA OFFICIAL API)
+def fetch_contextual_image(fact_text):
+    print("AI mövzunun ingiliscə adını çıxarır...")
     try:
         kw_prompt = (
-            "Extract ONLY 1-3 English keywords describing the main car or vehicle in this text for Pinterest search "
-            "(e.g. 'Bugatti Chiron supercar', 'Traffic jam highway', 'Car engine detail'). "
-            f"Do not write full sentences:\n{fact_text[:250]}"
+            "Extract ONLY 1-3 English words describing the exact car model or main subject "
+            "(e.g. 'Bugatti Chiron', 'Traffic jam', 'Car engine'). Output NOTHING else:\n"
+            f"{fact_text[:250]}"
         )
         kw_res = client.models.generate_content(model="gemini-2.0-flash", contents=kw_prompt)
-        english_query = kw_res.text.strip().replace('"', '').replace("'", "").replace(".", "")
-        print(f"🔍 Pinterest-də ingilis dilində axtarılır: '{english_query}'")
+        query = kw_res.text.strip().replace('"', '').replace("'", "").replace(".", "")
+        print(f"🔍 Axtarılan ingiliscə mövzu: '{query}'")
 
-        # Pinterest Axtarışı
-        pinterest_url = f"https://www.pinterest.com/search/pins/?q={requests.utils.quote(english_query)}"
-        p_res = requests.get(pinterest_url, headers=HEADERS, timeout=10)
-        if p_res.status_code == 200:
-            matches = re.findall(r'https://i\.pinimg\.com/[0-9ax]+/([a-f0-9/]+\.(?:jpg|png|webp))', p_res.text)
-            if matches:
-                img_url = f"https://i.pinimg.com/736x/{random.choice(matches[:5])}"
-                img_data = requests.get(img_url, headers=HEADERS, timeout=10)
-                if img_data.status_code == 200 and len(img_data.content) > 10000:
-                    with open("car_image.jpg", "wb") as f:
-                        f.write(img_data.content)
-                    print(f"✅ Pinterest-dən HD şəkil tapıldı: {img_url}")
-                    return "car_image.jpg"
-    except Exception as e:
-        print(f"⚠️ Pinterest axtarış xətası: {e}")
+        # Wikipedia Search API
+        search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(query)}&format=json"
+        s_data = requests.get(search_url, headers=HEADERS, timeout=8).json()
+        search_results = s_data.get("query", {}).get("search", [])
 
-    # Fallback: Wikipedia / Unsplash
-    try:
-        wiki_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(english_query)}&format=json"
-        s_res = requests.get(wiki_url, headers=HEADERS, timeout=8).json()
-        results = s_res.get("query", {}).get("search", [])
-        if results:
-            page_title = results[0]["title"]
+        for item in search_results[:3]:
+            page_title = item["title"]
             sum_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(page_title)}"
-            p_res = requests.get(sum_url, headers=HEADERS, timeout=8).json()
-            if "originalimage" in p_res:
-                img_url = p_res["originalimage"]["source"]
-                img_data = requests.get(img_url, headers=HEADERS, timeout=10)
-                if img_data.status_code == 200:
+            p_data = requests.get(sum_url, headers=HEADERS, timeout=8).json()
+            
+            if "originalimage" in p_data and "source" in p_data["originalimage"]:
+                img_url = p_data["originalimage"]["source"]
+                r = requests.get(img_url, headers=HEADERS, timeout=10)
+                if r.status_code == 200 and len(r.content) > 10000:
                     with open("car_image.jpg", "wb") as f:
-                        f.write(img_data.content)
-                    print(f"✅ Wikipedia-dan foto yükləndi: {img_url}")
+                        f.write(r.content)
+                    print(f"✅ MƏQALƏ ŞƏKLİ TAPILDI: '{page_title}' -> {img_url}")
                     return "car_image.jpg"
     except Exception as e:
-        print(f"Wikipedia xətası: {e}")
+        print(f"⚠️ Şəkil axtarış xətası: {e}")
 
-    # Ən son fallback HD şəkillər
-    fallbacks = [
-        "https://images.unsplash.com/photo-1617814076367-b759c7d7e738?q=80&w=1080",
-        "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=1080",
-        "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?q=80&w=1080"
-    ]
-    img_data = requests.get(random.choice(fallbacks), headers=HEADERS).content
+    # Fallback HD Şəkil
+    fallback_url = "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=1080"
+    img_bytes = requests.get(fallback_url, headers=HEADERS).content
     with open("car_image.jpg", "wb") as f:
-        f.write(img_data)
+        f.write(img_bytes)
     return "car_image.jpg"
 
 # 3. YUXARI ŞƏKİL, AŞAĞI MƏTN DİZAYNI
 def create_split_frame(text, img_path, width=1080, height=1920):
     canvas = Image.new('RGB', (width, height), (15, 23, 42))
 
-    # Yuxarı Hissə (1080x1080 Şəkil)
+    # Yuxarı 1080x1080 Kvadrat Şəkil Sahəsi
     img_h = 1080
     try:
         top_img = Image.open(img_path).convert('RGB')
         top_img = ImageOps.fit(top_img, (width, img_h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
         canvas.paste(top_img, (0, 0))
     except Exception as e:
-        print("Şəkil işlənmədi:", e)
+        print("Şəkil kəsilmə xətası:", e)
 
     draw = ImageDraw.Draw(canvas)
     
     # İki hissə arasında bəzək mavi xətti
-    draw.line([(0, img_h), (width, img_h)], fill=(59, 130, 246), width=8)
+    draw.line([(0, img_h), (width, img_h)], fill=(59, 130, 246), width=10)
 
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 38)
@@ -150,7 +117,7 @@ def create_split_frame(text, img_path, width=1080, height=1920):
     current_line = []
     for word in words:
         current_line.append(word)
-        if len(" ".join(current_line)) > 28:
+        if len(" ".join(current_line)) > 26:
             lines.append(" ".join(current_line[:-1]))
             current_line = [word]
     if current_line:
@@ -165,43 +132,46 @@ def create_split_frame(text, img_path, width=1080, height=1920):
     text_x = (width - text_w) / 2
     text_y = img_h + (bottom_area_h - text_h) / 2
 
-    # Yazını tam aşağı tünd fonun mərkəzinə yazmaq
+    # Mətni tam aşağı tünd fonun ortasına yazmaq
     draw.multiline_text((text_x, text_y), display_text, fill=(255, 255, 255), font=font, align="center", spacing=15)
 
     return np.array(canvas)
 
-# 4. INSTAGRAM VIRAL MAHNISINI MİKSLƏMƏK
+# 4. MAHNINI MÜTLƏQ YÜKLƏYƏN FUNKSİYA
 def get_background_music(duration):
-    tracks = VIRAL_MUSIC_LIST.copy()
-    random.shuffle(tracks)
-    for track in tracks:
+    urls = MUSIC_SOURCES.copy()
+    random.shuffle(urls)
+    for url in urls:
         try:
-            print(f"🎵 Viral mahnı yüklənir: {track['name']}...")
-            res = requests.get(track["url"], headers=HEADERS, timeout=15)
-            if res.status_code == 200 and len(res.content) > 30000:
+            print(f"🎵 Musiqi yüklənilir: {url}")
+            res = requests.get(url, headers=HEADERS, timeout=12)
+            if res.status_code == 200 and len(res.content) > 20000:
                 with open("bg_music.mp3", "wb") as f:
                     f.write(res.content)
                 
                 full_bg = AudioFileClip("bg_music.mp3")
-                start_time = track.get("start", 0)
+                start_time = 10
                 if start_time + duration > full_bg.duration:
                     start_time = max(0, full_bg.duration - duration)
                     
                 bg_audio = full_bg.subclip(start_time, start_time + duration)
-                bg_audio = bg_audio.volumex(0.20)  # Mahnı səsi 20%
-                print("✅ Viral mahnı uğurla arxa fona əlavə olundu!")
+                bg_audio = bg_audio.volumex(0.08)  # MAHNININ SƏSİ 8% (Arxa fona keçirildi)
+                print("✅ MAHNİ MƏTNLƏ MÜQƏDDƏS BİR MİKS YARATDI!")
                 return bg_audio
         except Exception as e:
-            print(f"Musiqi yükləmə xətası ({track['name']}):", e)
+            print(f"Musiqi xətası ({url}):", e)
     return None
 
 def create_video(text):
-    print("1. Azərbaycan dilində diktor səsi hazırlanır (edge-tts)...")
-    asyncio.run(edge_tts.Communicate(text.split("#")[0].strip(), voice="az-AZ-BabekNeural").save("voice.mp3"))
-    voice_audio = AudioFileClip("voice.mp3")
+    clean_text = text.split("#")[0].strip()
+    print("1. Azərbaycan dilində diktor səsi yaradılır...")
+    asyncio.run(edge_tts.Communicate(clean_text, voice="az-AZ-BabekNeural").save("voice.mp3"))
+    
+    # DİKTORUN SƏSİNİ 2.5 DƏFƏ QALDIRDIQ (Maksimum gür səs)
+    voice_audio = AudioFileClip("voice.mp3").volumex(2.5)
     duration = voice_audio.duration + 1.5
 
-    print("2. Viral fon musiqisi yüklənir...")
+    print("2. Arxa fon musiqisi əlavə edilir...")
     bg_audio = get_background_music(duration)
     
     if bg_audio:
@@ -209,12 +179,12 @@ def create_video(text):
     else:
         final_audio = voice_audio
 
-    print("3. Pinterest-dən İngilis dilində şəkil axtarılır və kadr hazırlanır...")
-    img_path = fetch_pinterest_image_en(text)
+    print("3. Dəqiq şəkil tapılır və kadr hazırlanır...")
+    img_path = fetch_contextual_image(text)
     frame_array = create_split_frame(text, img_path)
     txt_clip = ImageClip(frame_array).set_duration(duration)
 
-    print("4. Video render edilir...")
+    print("4. Video hazırlanır...")
     video = CompositeVideoClip([txt_clip]).set_audio(final_audio)
     video.write_videofile("reel.mp4", fps=24, codec="libx264", audio_codec="aac")
 
